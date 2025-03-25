@@ -13,6 +13,7 @@ cd vccGen
 2. Install dependencies:
 ```bash
 pip install -r requirements.txt
+playwright install
 ```
 
 3. Create a `.env` file in the root directory:
@@ -23,12 +24,28 @@ CAPITAL_ONE_PASSWORD=your_password
 
 ## Usage
 
-Run the script:
+1. Run the script:
 ```bash
 python main.py
 ```
 
-Follow the prompts to specify the number of virtual cards to generate.
+2. The script will:
+   - Check for your Capital One credentials in the `.env` file
+   - Prompt you to enter the number of virtual cards you want to generate
+   - Launch an automated browser session
+   - Log into your Capital One account
+   - Navigate through the verification process (requires manual input)
+   - Generate the requested number of virtual cards
+   - Save card details to `cap_genned.txt`
+
+3. During the process:
+   - You will need to manually complete the verification when prompted
+   - Follow the on-screen instructions for any required manual actions
+   - Card details will be automatically saved in CSV format (number,month,year,cvv)
+
+## Output
+
+Generated card details are saved to `cap_genned.txt` in the following format:
 
 ## Features
 
