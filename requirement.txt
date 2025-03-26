@@ -1,5 +1,18 @@
+# Web automation
 playwright==1.41.2
+pyautogui==0.9.54
+pynput==1.7.6
+
+# Image processing and OCR
+opencv-python==4.8.1
+Pillow==10.2.0
+pytesseract==0.3.10
+numpy==1.26.3
+
+# Environment and async
 python-dotenv==1.0.0
 asyncio==3.4.3
+
+# Code quality
 black==24.1.1
 pylint==3.0.3
