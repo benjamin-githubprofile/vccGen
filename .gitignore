@@ -37,3 +37,7 @@ aiscrape/
 # Operating System
 .DS_Store
 Thumbs.db
+
+# Output files
+cap_genned.txt
+relay_genned.txt

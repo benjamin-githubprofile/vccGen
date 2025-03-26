@@ -417,13 +417,15 @@ class CapitalOneAutomation:
                                                         # ... (similar to previous manual input code)
                                                 else:
                                                     print(f"Could not find the 'Create virtual card' button for card {cards_generated+1}")
-                                                break
+                                                # Remove this break statement that was causing premature loop exit
+                                                # break  
                                             else:
                                                 print(f"Card creation form for card {cards_generated+1} not found or incomplete")
                                         except Exception as card_error:
                                             print(f"Error during card {cards_generated+1} creation process: {card_error}")
                                             await page.screenshot(path=f"card_{cards_generated+1}_error.png")
-                                            break
+                                            # Remove this break statement that was causing premature loop exit
+                                            # break  
                                 
                                 except Exception as extract_error:
                                     print(f"Error extracting card details: {extract_error}")
