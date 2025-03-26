@@ -1,6 +1,6 @@
-# Capital One Virtual Card Generator
+# Virtual Card Generator
 
-An automated tool for generating virtual cards through Capital One's web interface using Python and Playwright.
+An automated tool for generating and managing virtual cards through Capital One and Relay web interfaces using Python.
 
 ## Setup
 
@@ -20,6 +20,8 @@ playwright install
 ```plaintext
 CAPITAL_ONE_USERNAME=your_username
 CAPITAL_ONE_PASSWORD=your_password
+RELAY_USERNAME=your_relay_username
+RELAY_PASSWORD=your_relay_password
 ```
 
 ## Usage
@@ -29,8 +31,12 @@ CAPITAL_ONE_PASSWORD=your_password
 python main.py
 ```
 
-2. The script will:
-   - Check for your Capital One credentials in the `.env` file
+2. Choose your bank:
+   - Option 1: Capital One
+   - Option 2: Relay
+
+3. For Capital One:
+   - The script will check for your credentials in the `.env` file
    - Prompt you to enter the number of virtual cards you want to generate
    - Launch an automated browser session
    - Log into your Capital One account
@@ -38,23 +44,61 @@ python main.py
    - Generate the requested number of virtual cards
    - Save card details to `cap_genned.txt`
 
-3. During the process:
-   - You will need to manually complete the verification when prompted
-   - Follow the on-screen instructions for any required manual actions
-   - Card details will be automatically saved in CSV format (number,month,year,cvv)
+4. For Relay:
+   - Choose your action:
+     1. Create virtual cards
+     2. Delete cards
+   - For card creation:
+     - First-time use will enter "Action Collection Mode" where you'll teach the automation by demonstrating the clicks
+     - Subsequent runs can use saved actions
+     - Generated card details are saved to `relay_genned.txt`
+   - For card deletion:
+     - Similar to creation, first record the deletion process
+     - Automation will repeat the recorded actions for the specified number of cards
 
-## Output
+## Output Files
 
-Generated card details are saved to `cap_genned.txt` in the following format:
+- Capital One cards: `cap_genned.txt`
+- Relay cards: `relay_genned.txt`
 
 ## Features
 
-- Automated login to Capital One
+### Capital One
+- Automated login
 - Multi-card generation support
 - Automated navigation through verification process
 - Card details extraction and storage
-- Environment variable configuration for secure credential management
+- Environment variable configuration
+
+### Relay
+- Support for both card creation and deletion
+- Action recording system for teaching the automation
+- Reusable saved actions for repeated tasks
+- Customizable delays between actions
+- Browser positioning guide
+- Double-click activation system
+- Error recovery mechanisms
+
+## Technical Details
+
+### Relay Automation
+- Uses pyautogui for screen interaction
+- OpenCV and PIL for image processing
+- OCR capabilities for card detail extraction
+- JSON-based action storage
+- Supports random text generation
+- Custom delay configuration per action
 
 ## Note
 
-This tool is for educational purposes only. Please ensure you comply with Capital One's terms of service and policies.
+This tool is for educational purposes only. Please ensure you comply with both Capital One's and Relay's terms of service and policies.
+
+## Requirements
+
+- Python 3.x
+- Playwright
+- PyAutoGUI
+- OpenCV
+- Pillow
+- Pytesseract
+- Required environment variables in `.env` file
