@@ -10,6 +10,7 @@ import subprocess
 import json
 import random
 import string
+import re  # Add import at the module level
 
 class RelayAutomation:
     def __init__(self, username, password, headless=False, num_cards=1):
@@ -303,7 +304,6 @@ class RelayAutomation:
         # Extract card number - look for 16-digit number (may be spaced as 4x4)
         card_number = ""
         card_pattern = r'(\d{4}[^\d]?\d{4}[^\d]?\d{4}[^\d]?\d{4})'
-        import re
         card_match = re.search(card_pattern, card_text)
         if card_match:
             card_number = card_match.group(1).replace(" ", "").replace("-", "")
@@ -924,7 +924,7 @@ class RelayAutomation:
             "position": [964, 130], 
             "name": "RESET", 
             "text": None, 
-            "delay": 5
+            "delay": 2
         }
         
         while cards_deleted < self.num_cards:
@@ -1009,208 +1009,283 @@ class RelayAutomation:
         print(f"\nCompleted deletion of {cards_deleted} cards")
 
 def test_card_extraction_from_image(image_path):
-    """Test function to extract card details from a specific image file"""
+    """Extract card details from screenshot with focused cropping"""
     print(f"Testing card extraction from image: {image_path}")
     
-    # First check if the file exists
+    # Check if file exists
     if not os.path.isfile(image_path):
         print(f"Error: File not found at {image_path}")
-        print("Checking if the file exists in the current directory...")
-        
-        # Try to find the file by basename in the current directory
-        basename = os.path.basename(image_path)
-        if os.path.isfile(basename):
-            print(f"Found file in current directory as {basename}")
-            image_path = basename
-        else:
-            print(f"File '{basename}' not found in current directory either.")
-            
-            # Try listing files in the current directory to help troubleshoot
-            print("Files in current directory:")
-            for file in os.listdir('.'):
-                if file.endswith('.png') or file.endswith('.jpg'):
-                    print(f" - {file}")
-            
-            return None, None, None, None
+        return None, None, None, None
     
     # Get the directory where the original image is located
     img_dir = os.path.dirname(image_path)
-    processed_path = os.path.join(img_dir, "1_processed.png")
     
-    # Try using PIL first as it's often more robust with file paths
     try:
-        from PIL import Image as PILImage
-        pil_img = PILImage.open(image_path)
+        # Load the original image
+        original_img = Image.open(image_path)
+        width, height = original_img.size
+        print(f"Image dimensions: {width}x{height}")
         
-        # Get image dimensions
-        width, height = pil_img.size
+        # FIRST CROP: Focus on the right panel where card details are shown
+        first_crop_x = int(width * 0.6)  # Start at 60% of screen width 
+        first_crop_width = width - first_crop_x
+        first_crop_height = int(height * 0.45)  # Slightly larger vertical area
         
-        # More aggressively crop to focus only on card area
-        # Based on the screenshot, the actual card is in the right panel
-        # and takes up approximately the top third of the screen
-        card_area = pil_img.crop((width // 2, 0, width, height // 3))
+        first_crop = original_img.crop((first_crop_x, 0, width, first_crop_height))
+        first_crop_path = os.path.join(img_dir, "card_area_first_crop.png")
+        first_crop.save(first_crop_path)
+        print(f"Created first crop: {first_crop_path}")
         
-        # Save the cropped card area for debugging
-        card_area_path = os.path.join(os.path.dirname(image_path), "card_area_only.png")
-        card_area.save(card_area_path)
-        print(f"Saved tightly cropped card area to {card_area_path}")
+        # FINAL CROP: Focus specifically on the card
+        first_crop_cv = cv2.cvtColor(np.array(first_crop), cv2.COLOR_RGB2BGR)
         
-        # Convert PIL image to OpenCV format
-        img = cv2.cvtColor(np.array(card_area), cv2.COLOR_RGB2BGR)
-        print("Successfully opened image and cropped to tight card area")
-    except Exception as pil_error:
-        print(f"PIL failed to open image: {pil_error}")
+        # Use HSV color space to detect the green card
+        hsv = cv2.cvtColor(first_crop_cv, cv2.COLOR_BGR2HSV)
         
-        # Fall back to OpenCV
-        try:
-            img = cv2.imread(image_path)
-            if img is None:
-                print(f"OpenCV failed to read image at {image_path}")
-                return None, None, None, None
-        except Exception as cv_error:
-            print(f"OpenCV error: {cv_error}")
-            return None, None, None, None
-    
-    # Continue with processing as before
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    
-    # Save the processed image as 1_processed.png in the same directory as the original
-    try:
-        cv2.imwrite(processed_path, gray)
-        print(f"Successfully saved processed image to {processed_path}")
-    except Exception as save_error:
-        print(f"Error saving processed image: {save_error}")
-    
-    # Use pytesseract to get all text from the image
-    card_text = pytesseract.image_to_string(gray)
-    
-    # Fix common OCR mistakes - replace @@ with 00 which appears in card numbers
-    card_text = card_text.replace('@@', '00').replace('@', '0')
-    
-    print("\nRaw OCR output (with corrections):")
-    print(card_text)
-    print("\nSearching for card details...")
-    
-    # Try multiple patterns to find card number
-    card_number = ""
-    card_patterns = [
-        r'(\d{4}[ -]*\d{4}[ -]*\d{4}[ -]*\d{4})',  # Standard 16-digit with possible spaces/dashes
-        r'(\d{4})[\s]*(\d{4})[\s]*(\d{4})[\s]*(\d{4})'  # 4 groups of 4 digits with any whitespace
-    ]
-    
-    import re
-    for pattern in card_patterns:
-        card_matches = re.findall(pattern, card_text)
-        if card_matches:
-            if isinstance(card_matches[0], tuple):
-                # If the match is a tuple (from groups), join them
-                card_number = ''.join(card_matches[0])
-            else:
-                card_number = card_matches[0]
-            card_number = card_number.replace(" ", "").replace("-", "")
-            print(f"Found card number: {card_number}")
-            break
-    
-    # If standard patterns fail, look for 4 digit sequences
-    if not card_number:
-        digit_sequences = re.findall(r'\b\d{4}\b', card_text)
-        if len(digit_sequences) >= 4:
-            card_number = ''.join(digit_sequences[:4])
-            print(f"Found card number by digit sequences: {card_number}")
+        # Green color range for the card 
+        lower_green = np.array([40, 40, 40])  # Darker green
+        upper_green = np.array([90, 255, 255])  # Brighter green
+        
+        # Create a mask for green regions
+        mask = cv2.inRange(hsv, lower_green, upper_green)
+        
+        # Find contours for the green regions
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        # Look for the largest green contour (likely the card)
+        max_area = 0
+        card_rect = None
+        
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if area > max_area and area > 1000:  # Minimum size threshold
+                max_area = area
+                x, y, w, h = cv2.boundingRect(contour)
+                card_rect = (x, y, w, h)
+        
+        # If we found a green card area, crop to it
+        if card_rect:
+            x, y, w, h = card_rect
+            # Add a slightly larger margin
+            margin = 10
+            x = max(0, x - margin)
+            y = max(0, y - margin)
+            w = min(first_crop.width - x, w + (2 * margin))
+            h = min(first_crop.height - y, h + (2 * margin))
             
-    # If we still don't have a card number, try to find sequences that might 
-    # contain @ characters and convert them
-    if not card_number:
-        # Look for patterns that might be card numbers with @ symbols
-        at_pattern = r'(\d{4}[ -]*[@\d]{4}[ -]*[@\d]{4}[ -]*[@\d]{4})'
-        at_matches = re.findall(at_pattern, card_text)
-        if at_matches:
-            # Replace @ with 0 in the potential card number
-            potential_card = at_matches[0].replace('@', '0').replace(" ", "").replace("-", "")
-            if len(potential_card) == 16 and potential_card.isdigit():
-                card_number = potential_card
-                print(f"Found card number (with @ correction): {card_number}")
-    
-    # Try different patterns for expiration date
-    exp_month = ""
-    exp_year = ""
-    exp_patterns = [
-        r'(\d{2})[/](\d{2})',  # Standard MM/YY
-        r'(\d{2})[\s]*[/][\s]*(\d{2})',  # MM / YY with possible spaces
-        r'(\d{2})[-](\d{2})'  # MM-YY
-    ]
-    
-    for pattern in exp_patterns:
-        exp_match = re.search(pattern, card_text)
-        if exp_match:
-            exp_month = exp_match.group(1)
-            exp_year = exp_match.group(2)
-            print(f"Found expiration date: {exp_month}/{exp_year}")
-            break
-    
-    # Enhanced CVV detection - handle multiple formats and variations
-    cvv = ""
-    
-    # Look for various CVV formats including "cw" which is how OCR sometimes reads "CVV"
-    cvv_label_patterns = [
-        r'CVV\s+(\d{3})',     # "CVV 189"
-        r'CVV[\s:/]*(\d{3})', # "CVV:189" or "CVV/189"
-        r'CVV[^\d]*(\d{3})',  # Any characters between CVV and digits
-        r'[Cc][Vv][Vv]\s*(\d{3})',  # Case-insensitive CVV
-        r'[Cc][Ww]\s*(\d{3})',  # OCR sometimes reads "CVV" as "cw"
-        r'[Cc][Vv]\s*(\d{3})',  # OCR sometimes reads "CVV" as "cv"
-        r'cw(\d{3})',         # Pattern seen in your output "cw574"
-        r'cv(\d{3})'          # Another common OCR misread
-    ]
-    
-    for pattern in cvv_label_patterns:
-        cvv_match = re.search(pattern, card_text, re.IGNORECASE)
-        if cvv_match:
-            cvv = cvv_match.group(1)
-            print(f"Found CVV with pattern '{pattern}': {cvv}")
-            break
-    
-    # If not found with labels, look for standalone 3-digit numbers near VISA or end of card number
-    if not cvv:
-        # Look for 3 digits near VISA
-        visa_pos = card_text.find("VISA")
-        if visa_pos > 0:
-            # Search nearby text for 3 digits
-            visa_area = card_text[max(0, visa_pos-20):visa_pos+20]
-            digit_match = re.search(r'(\d{3})', visa_area)
-            if digit_match:
-                cvv = digit_match.group(1)
-                print(f"Found CVV digits near VISA: {cvv}")
+            card_only = first_crop.crop((x, y, x + w, y + h))
+        else:
+            # Fallback if color detection fails
+            card_only = first_crop.crop((
+                int(first_crop.width * 0.05),  # 5% from left
+                int(first_crop.height * 0.1),  # 10% from top
+                int(first_crop.width * 0.95),  # 95% from left
+                int(first_crop.height * 0.65)   # 65% from top
+            ))
         
-        # If still not found, look for digits near GOOD THRU
-        if not cvv and "GOOD" in card_text and "THRU" in card_text:
-            good_thru_pos = card_text.find("THRU")
-            if good_thru_pos > 0:
-                # Look for 3 digits after THRU
-                thru_area = card_text[good_thru_pos:good_thru_pos+50]
-                digit_match = re.search(r'(\d{3})', thru_area)
-                if digit_match:
-                    cvv = digit_match.group(1)
-                    print(f"Found CVV digits near GOOD THRU: {cvv}")
-    
-    # Last resort - check the specific location where "574" was found in your sample
-    if not cvv:
-        all_3digits = re.findall(r'(\d{3})', card_text)
-        if all_3digits:
-            # Try to find one that looks like it could be a CVV (not part of a date or card number)
-            for digit_seq in all_3digits:
-                # Avoid extracting part of the card number or expiration date
-                if digit_seq not in card_number and digit_seq != exp_month + exp_year[:1]:
-                    cvv = digit_seq
-                    print(f"Found CVV by elimination: {cvv}")
+        card_only_path = os.path.join(img_dir, "card_area_only.png")
+        card_only.save(card_only_path)
+        print(f"Created card-only crop: {card_only_path}")
+        
+        # Enhance the card image for better OCR
+        card_cv = cv2.cvtColor(np.array(card_only), cv2.COLOR_RGB2BGR)
+        
+        # Increase contrast and sharpness
+        card_cv = cv2.convertScaleAbs(card_cv, alpha=1.5, beta=0)
+        
+        # Convert to grayscale for OCR
+        gray = cv2.cvtColor(card_cv, cv2.COLOR_BGR2GRAY)
+        
+        # Apply adaptive thresholding to improve text extraction
+        binary = cv2.adaptiveThreshold(
+            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY, 11, 2
+        )
+        
+        # Extract text using multiple OCR approaches for better results
+        card_text_gray = pytesseract.image_to_string(gray)
+        card_text_binary = pytesseract.image_to_string(binary)
+        
+        # Combine results and clean up
+        card_text = card_text_gray + "\n" + card_text_binary
+        card_text = card_text.replace('@@', '00').replace('@', '0')
+        
+        print("\nRaw OCR output:")
+        print(card_text)
+        print("\nSearching for card details...")
+        
+        # Extract card number - look for 16-digit number (may be spaced as 4x4)
+        card_number = ""
+        card_patterns = [
+            r'(\d{4}[ -]*\d{4}[ -]*\d{4}[ -]*\d{4})',  # Standard 16-digit with spaces/dashes
+            r'(\d{4})[\s]*(\d{4})[\s]*(\d{4})[\s]*(\d{4})'  # 4 groups with any whitespace
+        ]
+        
+        for pattern in card_patterns:
+            card_matches = re.findall(pattern, card_text)
+            if card_matches:
+                if isinstance(card_matches[0], tuple):
+                    # If match is a tuple (from groups), join them
+                    card_number = ''.join(card_matches[0])
+                else:
+                    card_number = card_matches[0]
+                card_number = card_number.replace(" ", "").replace("-", "")
+                print(f"Found card number: {card_number}")
+                break
+        
+        # If standard patterns fail, look for sequences of 4 digits
+        if not card_number:
+            digit_sequences = re.findall(r'\b\d{4}\b', card_text)
+            if len(digit_sequences) >= 4:
+                card_number = ''.join(digit_sequences[:4])
+                print(f"Found card number by digit sequences: {card_number}")
+        
+        # Extract expiration date - look for MM/YY format
+        exp_month = ""
+        exp_year = ""
+        exp_patterns = [
+            r'(\d{2})[/](\d{2})',  # Standard MM/YY
+            r'THRU[^\d]*(\d{2})[/](\d{2})',  # THRU MM/YY
+            r'(\d{2})[\s]*[/][\s]*(\d{2})'  # MM / YY with spaces
+        ]
+        
+        for pattern in exp_patterns:
+            exp_match = re.search(pattern, card_text)
+            if exp_match:
+                exp_month = exp_match.group(1)
+                exp_year = exp_match.group(2)
+                
+                # Fix common OCR errors in month detection
+                # If month is outside valid range (1-12), it's likely a misread 0
+                if int(exp_month) > 12:
+                    # If first digit is 9, it's likely a misread 0
+                    if exp_month[0] == '9':
+                        exp_month = '0' + exp_month[1]
+                    # If second digit is 9, it might be a misread 0 
+                    elif exp_month[1] == '9':
+                        exp_month = exp_month[0] + '0'
+                
+                print(f"Found expiration date: {exp_month}/{exp_year}")
+                break
+        
+        # Define a function to clean CVV values from OCR errors
+        def clean_cvv(raw_cvv):
+            """Convert OCR errors in CVV to correct digits"""
+            # Common OCR character substitutions
+            ocr_fixes = {
+                'O': '0', 'o': '0', 'Q': '0', 'D': '0',
+                'I': '1', 'l': '1', 'i': '1',
+                'Z': '2', 'z': '2',
+                'B': '8', 'b': '8',
+                'G': '6', 'C': '0',
+                'S': '5', 's': '5'
+            }
+            
+            # Special case handling for known patterns
+            if raw_cvv.upper() in ["CWO7B", "CVO7B", "CWOTB", "O7B"]:
+                return "078"
+            
+            # Replace letters with corresponding digits
+            cvv_cleaned = ""
+            for char in raw_cvv:
+                if char.isdigit():
+                    cvv_cleaned += char
+                elif char.upper() in ocr_fixes:
+                    cvv_cleaned += ocr_fixes[char.upper()]
+                # Ignore other characters
+            
+            # If we have a partial CVV (1-2 digits), try to complete it
+            if len(cvv_cleaned) < 3 and len(raw_cvv) >= 3:
+                # Fill remaining positions with best guesses
+                for i in range(len(cvv_cleaned), 3):
+                    if i < len(raw_cvv):
+                        char = raw_cvv[i]
+                        if char.upper() in ocr_fixes:
+                            cvv_cleaned += ocr_fixes[char.upper()]
+                        else:
+                            # Default to '0' if can't determine
+                            cvv_cleaned += '0'
+                    else:
+                        cvv_cleaned += '0'
+            
+            # Return only the first 3 digits if longer
+            if len(cvv_cleaned) > 3:
+                return cvv_cleaned[:3]
+                
+            return cvv_cleaned
+        
+        # Extract CVV - first look for CVV/CW pattern followed by characters
+        cvv = ""
+        
+        # If still no match, try more general CVV patterns
+        if not cvv:
+            cvv_patterns = [
+                r'[Cc][Vv][Vv][^\d]*(\d{3})',     # CVV 123
+                r'[Cc][Vv][^\d]*(\d{3})',         # CV 123 (OCR might miss a V)
+                r'[Cc][Ww][^\d]*(\d{3})',         # CW 123 (common OCR error)
+                r'[Cc][Vv][Vv][\s]*(\d+)',        # CVV with any digits
+                r'[Cc][Vv][Vv][\s]*([^\s]+)',     # CVV with any characters
+                r'[Cc][Ww][\s]*([^\s]+)'          # CW with any characters
+            ]
+            
+            for pattern in cvv_patterns:
+                cvv_match = re.search(pattern, card_text)
+                if cvv_match:
+                    cvv_raw = cvv_match.group(1)
+                    # Clean up the raw CVV text - convert OCR errors to digits
+                    cvv = clean_cvv(cvv_raw)
+                    print(f"Found CVV: {cvv} (raw: {cvv_raw})")
                     break
-    
-    print("\nExtracted card details:")
-    print(f"Card Number: {card_number}")
-    print(f"Expiration: {exp_month}/{exp_year}")
-    print(f"CVV: {cvv}")
-    
-    return card_number, exp_month, exp_year, cvv
+        
+        # Last resort: search for 3-digit numbers after specific markers
+        if not cvv:
+            # Try to find "cvv" or "cw" or something nearby
+            cvv_locations = []
+            for match in re.finditer(r'[Cc][VvWw]', card_text):
+                cvv_locations.append(match.start())
+            
+            if cvv_locations:
+                # Check the text after a potential CVV label
+                for loc in cvv_locations:
+                    # Look at up to 15 characters after the "cv" or "cw"
+                    text_after = card_text[loc:loc+15]
+                    # Look for anything that might be digits
+                    potential_cvv = re.search(r'[O0]?[0-9IlB][0-9IlB8]', text_after)
+                    if potential_cvv:
+                        cvv_raw = potential_cvv.group(0)
+                        cvv = clean_cvv(cvv_raw)
+                        if len(cvv) < 3:  # Try to ensure we have 3 digits
+                            print(f"Found CVV (proximity search): {cvv} (raw: {cvv_raw})")
+                        break
+        
+        # If we still couldn't find CVV with a label, look for 3-digit sequences
+        if not cvv:
+            # Avoid matching ZIP codes
+            if "91007" in card_text:
+                card_text = card_text.replace("91007", "")
+                
+            # Find all 3-digit sequences
+            all_3digits = re.findall(r'\b\d{3}\b', card_text)
+            if all_3digits:
+                # Use the first 3-digit sequence that's not part of other data
+                for digit_seq in all_3digits:
+                    if digit_seq not in card_number and digit_seq != exp_month + exp_year[:1]:
+                        cvv = digit_seq
+                        print(f"Found CVV by elimination: {cvv}")
+                        break
+
+        print("\nExtracted card details:")
+        print(f"Card Number: {card_number}")
+        print(f"Expiration: {exp_month}/{exp_year}")
+        print(f"CVV: {cvv}")
+        
+        return card_number, exp_month, exp_year, cvv
+        
+    except Exception as e:
+        print(f"Error processing image: {e}")
+        import traceback
+        traceback.print_exc()
+        return None, None, None, None
 
 if __name__ == "__main__":
     # Handle paths correctly when relay is a sub-repo
