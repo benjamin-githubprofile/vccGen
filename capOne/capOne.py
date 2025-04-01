@@ -716,203 +716,120 @@ class CapitalOneAutomation:
                                             else:
                                                 print(f"Failed to find confirm button for card {i+1}")
                                                 continue
+                            
+                            # Wait for the deletion to complete with enough time to see the success message
+                            await page.wait_for_timeout(2000)
+                            
+                            # Check for success message BEFORE dismissing the dialog
+                            try:
+                                # Look for the specific success header
+                                success_message = await page.wait_for_selector(
+                                    "h1#title:has-text('Success')", 
+                                    timeout=5000
+                                )
+                                
+                                if success_message:
+                                    print(f"✅ Confirmed successful deletion of card {i+1} - Success message found")
+                                else:
+                                    # Try alternative selectors for the success message
+                                    alt_success = await page.wait_for_selector(
+                                        "h1.c1-ease-dialog-title:has-text('Success')", 
+                                        timeout=2000
+                                    )
+                                    
+                                    if alt_success:
+                                        print(f"✅ Confirmed successful deletion of card {i+1} - Success title found")
+                                    else:
+                                        # Try with JavaScript to find any success message
+                                        success_found = await page.evaluate('''() => {
+                                            // Check for the specific h1
+                                            const successTitle = document.querySelector("h1#title.c1-ease-dialog-title");
+                                            if (successTitle && successTitle.textContent.trim() === "Success") {
+                                                return true;
+                                            }
+                                            
+                                            // Check for any element containing "Success" text
+                                            const elements = document.querySelectorAll("*");
+                                            for (const el of elements) {
+                                                if (el.textContent && el.textContent.trim() === "Success") {
+                                                    return true;
+                                                }
+                                            }
+                                            
+                                            return false;
+                                        }''')
+                                        
+                                        if success_found:
+                                            print(f"✅ Confirmed successful deletion of card {i+1} - Success text found via JavaScript")
+                                        else:
+                                            print(f"⚠️ Warning: Could not verify successful deletion of card {i+1} - No success message found")
+                                            print(f"Continuing to next card anyway...")
+                                    
+                            except Exception as success_error:
+                                print(f"Error checking for success message for card {i+1}: {success_error}")
+                            
+                            # AFTER checking for success, now try to dismiss the dialog
+                            print(f"Now dismissing the confirmation dialog...")
+                            
+                            # Wait for any dismiss button or wait for the success message to disappear naturally
+                            try:
+                                dismiss_button = await page.wait_for_selector(
+                                    "button:has-text('OK'), button:has-text('Done'), button:has-text('Close')", 
+                                    timeout=3000
+                                )
+                                if dismiss_button:
+                                    await dismiss_button.click()
+                                    print(f"Clicked dismiss button after successful deletion of card {i+1}")
+                                else:
+                                    # If no dismiss button found, click outside the dialog
+                                    print("No dismiss button found, clicking outside the dialog...")
+                                    
+                                    # Click somewhere in the main document area, away from the dialog
+                                    await page.mouse.click(50, 50)  # Click near the top-left of the page
+                                    print(f"✅ Clicked outside dialog to dismiss it for card {i+1}")
+                                    
+                                    # Alternative approach: click in the empty space of the document body
+                                    if await page.query_selector("div.modal-backdrop, div.modal"):
+                                        await page.evaluate('''() => {
+                                            // Find the document body and click in an empty area
+                                            const body = document.body;
+                                            const bodyRect = body.getBoundingClientRect();
+                                            
+                                            // Create and dispatch a click event in the top left corner
+                                            const clickEvent = new MouseEvent('click', {
+                                                bubbles: true,
+                                                cancelable: true,
+                                                view: window,
+                                                clientX: 50,
+                                                clientY: 50
+                                            });
+                                            
+                                            // Dispatch the event directly on the body
+                                            body.dispatchEvent(clickEvent);
+                                        }''')
+                                        print(f"✅ Used JavaScript to click outside modal for card {i+1}")
+                                    
+                                    # If still not dismissed, try Escape key
+                                    await asyncio.sleep(1)
+                                    if await page.query_selector("div.modal-backdrop, div.modal"):
+                                        await page.keyboard.press("Escape")
+                                        print(f"Pressed Escape key to attempt to dismiss dialog for card {i+1}")
+                            except Exception as dismiss_error:
+                                print(f"Error dismissing dialog: {dismiss_error}")
+                                
+                                # Final fallback: just try to press Escape key
+                                try:
+                                    await page.keyboard.press("Escape")
+                                    print(f"Pressed Escape key as fallback to dismiss dialog for card {i+1}")
+                                except Exception as escape_error:
+                                    print(f"Error when trying to press Escape: {escape_error}")
+                        
                         except Exception as confirm_error:
                             print(f"Error confirming deletion for card {i+1}: {confirm_error}")
                             continue
-                        
-                        # Wait for the deletion to complete with enough time to see the success message
-                        await page.wait_for_timeout(2000)
-
-                        # Check for success message
-                        try:
-                            # Look for the specific success header
-                            success_message = await page.wait_for_selector(
-                                "h1#title:has-text('Success')", 
-                                timeout=5000
-                            )
-                            
-                            if success_message:
-                                print(f"✅ Confirmed successful deletion of card {i+1} - Success message found")
-                            else:
-                                # Try alternative selectors for the success message
-                                alt_success = await page.wait_for_selector(
-                                    "h1.c1-ease-dialog-title:has-text('Success')", 
-                                    timeout=2000
-                                )
-                                
-                                if alt_success:
-                                    print(f"✅ Confirmed successful deletion of card {i+1} - Success title found")
-                                else:
-                                    # Try with JavaScript to find any success message
-                                    success_found = await page.evaluate('''() => {
-                                        // Check for the specific h1
-                                        const successTitle = document.querySelector("h1#title.c1-ease-dialog-title");
-                                        if (successTitle && successTitle.textContent.trim() === "Success") {
-                                            return true;
-                                        }
-                                        
-                                        // Check for any element containing "Success" text
-                                        const elements = document.querySelectorAll("*");
-                                        for (const el of elements) {
-                                            if (el.textContent && el.textContent.trim() === "Success") {
-                                                return true;
-                                            }
-                                        }
-                                        
-                                        return false;
-                                    }''')
-                                    
-                                    if success_found:
-                                        print(f"✅ Confirmed successful deletion of card {i+1} - Success text found via JavaScript")
-                                    else:
-                                        print(f"⚠️ Warning: Could not verify successful deletion of card {i+1} - No success message found")
-                                        print(f"Continuing to next card anyway...")
-                                
-                        except Exception as success_error:
-                            print(f"Error checking for success message for card {i+1}: {success_error}")
-
-                        # Wait for any dismiss button or wait for the success message to disappear naturally
-                        try:
-                            dismiss_button = await page.wait_for_selector(
-                                "button:has-text('OK'), button:has-text('Done'), button:has-text('Close')", 
-                                timeout=3000
-                            )
-                            if dismiss_button:
-                                await dismiss_button.click()
-                                print(f"Clicked dismiss button after successful deletion of card {i+1}")
-                        except:
-                            # If no dismiss button found, wait a moment for any auto-dismissal
-                            print(f"No dismiss button found, waiting for success message to disappear")
-                            await page.wait_for_timeout(2000)
 
                         # Additional wait to ensure the UI is ready for the next card deletion
                         await page.wait_for_timeout(2000)
-                        
-                        # Look for and click the "Next" button before moving to the next card
-                        try:
-                            # Wait a bit longer for any animations to complete
-                            await asyncio.sleep(1)
-                            
-                            # Try clicking on the overlay first to ensure dialog is active
-                            try:
-                                await page.click('.cdk-overlay-container')
-                                print(f"Clicked on overlay to ensure dialog is active")
-                            except:
-                                pass
-                            
-                            # Use multiple approaches to find and click the Next button
-                            next_clicked = False
-                            
-                            # 1. Try with exact data-aut attribute and class (using the HTML you provided)
-                            try:
-                                next_button = await page.wait_for_selector(
-                                    "button[data-aut='button-next']._1De-hWu2XrYnO5hnFIWYwJ.surveyBtn.surveyBtn_next", 
-                                    timeout=3000
-                                )
-                                if next_button:
-                                    await next_button.click()
-                                    print(f"Clicked 'Next' button with exact selector for card {i+1}")
-                                    next_clicked = True
-                            except:
-                                print(f"Could not find 'Next' button with exact selector")
-                            
-                            # 2. Try with just the data-aut attribute if not clicked yet
-                            if not next_clicked:
-                                try:
-                                    next_button = await page.wait_for_selector(
-                                        "button[data-aut='button-next']", 
-                                        timeout=3000
-                                    )
-                                    if next_button:
-                                        await next_button.click()
-                                        print(f"Clicked 'Next' button using data-aut attribute for card {i+1}")
-                                        next_clicked = True
-                                except:
-                                    print(f"Could not find 'Next' button with data-aut attribute")
-                            
-                            # 3. Try with JavaScript using the exact button structure from your HTML
-                            if not next_clicked:
-                                try:
-                                    next_clicked = await page.evaluate('''() => {
-                                        const button = document.querySelector('button[data-aut="button-next"][class*="surveyBtn_next"]');
-                                        if (button) {
-                                            button.click();
-                                            return true;
-                                        }
-                                        return false;
-                                    }''')
-                                    
-                                    if next_clicked:
-                                        print(f"Clicked 'Next' button via JavaScript with exact attributes for card {i+1}")
-                                except:
-                                    print(f"JavaScript click attempt failed")
-                            
-                            # 4. Try with text content as a fallback
-                            if not next_clicked:
-                                try:
-                                    text_next_button = await page.wait_for_selector(
-                                        "button:has-text('Next')", 
-                                        timeout=3000
-                                    )
-                                    if text_next_button:
-                                        await text_next_button.click()
-                                        print(f"Clicked 'Next' button by text content for card {i+1}")
-                                        next_clicked = True
-                                except:
-                                    print(f"Could not find 'Next' button by text content")
-                            
-                            # 5. Use a more aggressive approach with evaluate if still not clicked
-                            if not next_clicked:
-                                try:
-                                    force_clicked = await page.evaluate('''() => {
-                                        // Try all possible variations to find the Next button
-                                        let buttons = Array.from(document.querySelectorAll('button'));
-                                        
-                                        // First by exact match
-                                        let nextButton = buttons.find(b => 
-                                            b.getAttribute('data-aut') === 'button-next' || 
-                                            b.textContent.trim() === 'Next' ||
-                                            (b.className && b.className.includes('surveyBtn_next'))
-                                        );
-                                        
-                                        if (nextButton) {
-                                            // Try several click methods
-                                            try {
-                                                nextButton.click();
-                                                return true;
-                                            } catch(e) {
-                                                // Try with mouse event
-                                                try {
-                                                    const evt = new MouseEvent('click', {
-                                                        bubbles: true,
-                                                        cancelable: true,
-                                                        view: window
-                                                    });
-                                                    nextButton.dispatchEvent(evt);
-                                                    return true;
-                                                } catch(e2) {
-                                                    return false;
-                                                }
-                                            }
-                                        }
-                                        return false;
-                                    }''')
-                                    
-                                    if force_clicked:
-                                        print(f"Force-clicked 'Next' button via JavaScript for card {i+1}")
-                                        next_clicked = True
-                                except:
-                                    print(f"Force-click attempt failed")
-                            
-                            if not next_clicked:
-                                print(f"⚠️ Warning: Could not find or click 'Next' button after deletion of card {i+1}")
-                                # Continue anyway since we've deleted the card successfully
-                                
-                        except Exception as next_button_error:
-                            print(f"Error finding/clicking 'Next' button after deletion of card {i+1}: {next_button_error}")
-
-                        # Add a longer wait after handling the Next button to ensure UI stability for next card
-                        await asyncio.sleep(3)
                         
                     except Exception as e:
                         print(f"Error in deletion process for card {i+1}: {e}")
